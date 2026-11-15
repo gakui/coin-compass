@@ -440,16 +440,26 @@ function marketView(){
 }
 function signalsView(){
   const ids=S.base.filter(id=>S.mk[id]);
-  const have=ids.filter(id=>S.sig[id]).sort((a,b)=>S.sig[b].score-S.sig[a].score);
+  const ORDER=['ACCUMULATE','WATCH','HOLD','REDUCE'];
+  const have=ids.filter(id=>S.sig[id]).sort((a,b)=>ORDER.indexOf(S.sig[a].label)-ORDER.indexOf(S.sig[b].label)||S.sig[b].score-S.sig[a].score||S.base.indexOf(a)-S.base.indexOf(b));
   const wait=ids.filter(id=>!S.sig[id]);
   let h=`<div class="banner">Signals are rules-based information from price trend, momentum and market mood. They are not predictions or financial advice.</div>`;
   if(!have.length&&S.loading)h+='<div class="skel"></div>'.repeat(4);
+  if(have.length){
+    h+=`<section class="card" style="margin-bottom:12px"><b>Summary</b>${ORDER.map(L=>{
+      const g=have.filter(id=>S.sig[id].label===L);
+      return `<div class="item" style="align-items:flex-start"><span class="chip ${LABELS[L][1]}" style="min-width:86px;text-align:center">${LABELS[L][0]}</span><span style="flex:1;text-align:right">${g.length?g.map(id=>`<button data-act="coin" data-id="${esc(id)}" style="text-decoration:underline dotted;text-underline-offset:3px">${esc(S.mk[id].name)}</button>`).join(', '):'<span class="muted">None right now</span>'}</span></div>`}).join('')}</section>
+    <details class="card" style="margin-bottom:12px"><summary style="cursor:pointer;min-height:28px"><b>What do RSI and the +1 / −1 points mean?</b></summary>
+    <p style="margin:10px 0 6px"><b>RSI</b> (Relative Strength Index) is a 0 to 100 reading of how fast price has moved over the last 14 days. Under 30 means it has been sold hard (oversold, may be cheap). Over 70 means it has run up fast (overheated). 40 to 60 is calm.</p>
+    <p style="margin:6px 0"><b>The points</b> are a checklist. Each check adds or subtracts points: oversold or deep discounts add, overheated or weak trends subtract. The total is the score, and the score decides the label.</p>
+    <p style="margin:6px 0"><b>Labels:</b> +3 or more Accumulate, +1 to +2 Watch, 0 to −1 Hold, −2 or less Reduce.</p></details>`;
+  }
   h+=have.map(id=>{
     const m=S.mk[id],s=S.sig[id];
     return `<article class="card sig"><header><button data-act="coin" data-id="${esc(id)}"><b>${esc(m.name)}</b> <span class="muted">$${fp(m.current_price)}</span></button>${chip(s)}</header>
     <p>${esc(s.advice)}</p>
     <ul class="why-list">${s.why.map(w=>`<li><b class="${w.p>0?'up':w.p<0?'down':'muted'}">${w.p>0?'+':w.p<0?'−':''}${Math.abs(w.p)||'0'}</b><span>${esc(w.t)}</span></li>`).join('')}</ul>
-    <div class="metrics"><span>Score ${s.score>0?'+':''}${s.score}</span><span>RSI ${s.rsi.toFixed(0)}</span>${s.vs200!=null?`<span>${s.vs200>=0?'+':''}${(s.vs200*100).toFixed(0)}% vs 200-day</span>`:''}<span>${(s.dd*100).toFixed(0)}% from 180-day high</span></div></article>`;
+    <div class="metrics"><span>Score ${s.score>0?'+':''}${s.score}</span><span>RSI ${s.rsi.toFixed(0)} (${s.rsi<30?'oversold':s.rsi>70?'overheated':s.rsi<40?'weak':s.rsi>60?'warm':'calm'})</span>${s.vs200!=null?`<span>${s.vs200>=0?'+':''}${(s.vs200*100).toFixed(0)}% vs 200-day</span>`:''}<span>${(s.dd*100).toFixed(0)}% from 180-day high</span></div></article>`;
   }).join('');
   if(wait.length)h+=`<p class="note">Still loading history for: ${wait.map(id=>esc(S.mk[id].symbol.toUpperCase())).join(', ')}</p>`;
   h+=`<p class="note">Score guide: +3 or more Accumulate, +1 to +2 Watch, 0 to −1 Hold, −2 or less Reduce. A coin that is oversold but in a downtrend usually lands on Watch or Hold on purpose: cheap can get cheaper.</p>`;
