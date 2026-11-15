@@ -16,7 +16,7 @@ import urllib.parse
 import urllib.request
 
 CG = "https://api.coingecko.com/api/v3"
-CC = "https://min-api.cryptocompare.com/data/v2"
+BN = "https://data-api.binance.vision/api/v3"
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 ADVICE = {
@@ -156,19 +156,29 @@ def run(fetch_markets=None, fetch_candles=None, fetch_fng=None, now=None, topic=
     topic = os.environ.get("NTFY_TOPIC", "") if topic is None else topic
     click = os.environ.get("APP_URL", "") if click is None else click
     now = now or dt.datetime.now(dt.timezone.utc)
-    key = os.environ.get("CRYPTOCOMPARE_KEY", "")
-    cc_headers = {"authorization": f"Apikey {key}"} if key else {}
 
     if fetch_markets is None:
         def fetch_markets(ids):
             q = f"{CG}/coins/markets?vs_currency=usd&ids={','.join(ids)}&price_change_percentage=24h,7d"
             return get(q)
     if fetch_candles is None:
-        def fetch_candles(sym):
-            j = get(f"{CC}/histoday?fsym={sym}&tsym=USD&limit=210", cc_headers)
-            if j.get("Response") != "Success":
+        def fetch_candles(sym, cid=None):
+            # Binance public market data first (no key), CoinGecko as backup.
+            try:
+                j = get(f"{BN}/klines?symbol={sym}USDT&interval=1d&limit=210", tries=2)
+                c = [float(k[4]) for k in j if float(k[4]) > 0]
+                if len(c) >= 60:
+                    return c
+            except Exception as e:  # noqa: BLE001
+                print(f"binance failed for {sym}: {e}")
+            if not cid:
                 raise RuntimeError("no candles for " + sym)
-            return [d["close"] for d in j["Data"]["Data"] if d["close"] > 0]
+            time.sleep(8)  # stay under CoinGecko's free rate limit
+            j = get(f"{CG}/coins/{cid}/market_chart?vs_currency=usd&days=210&interval=daily")
+            c = [p[1] for p in j.get("prices", []) if p[1] > 0]
+            if len(c) < 60:
+                raise RuntimeError("no candles for " + sym)
+            return c
     if fetch_fng is None:
         def fetch_fng():
             return int(get("https://api.alternative.me/fng/?limit=1")["data"][0]["value"])
@@ -197,7 +207,7 @@ def run(fetch_markets=None, fetch_candles=None, fetch_fng=None, now=None, topic=
         ch24 = m.get("price_change_percentage_24h_in_currency", m.get("price_change_percentage_24h"))
         sig = None
         try:
-            c = fetch_candles(sym)
+            c = fetch_candles(sym, cid) if fetch_candles.__code__.co_argcount > 1 else fetch_candles(sym)
             c[-1] = price
             sig = compute_signal(c, fng)
         except Exception as e:  # noqa: BLE001
