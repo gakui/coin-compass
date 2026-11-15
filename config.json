@@ -1,0 +1,6 @@
+{
+  "base": ["bitcoin", "ethereum", "ripple", "binancecoin", "solana", "tron", "dogecoin", "cardano", "chainlink", "avalanche-2"],
+  "alerts": [],
+  "move_pct": 7,
+  "brief_hour_utc": 6
+}
