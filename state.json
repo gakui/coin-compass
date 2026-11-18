@@ -3,14 +3,14 @@
  "fired": {},
  "fng_zone": "fear",
  "labels": {
-  "avalanche-2": "HOLD",
+  "avalanche-2": "WATCH",
   "binancecoin": "WATCH",
   "bitcoin": "WATCH",
   "cardano": "WATCH",
   "chainlink": "WATCH",
   "dogecoin": "WATCH",
   "ethereum": "WATCH",
-  "ripple": "HOLD",
+  "ripple": "WATCH",
   "solana": "WATCH",
   "tron": "HOLD"
  },
