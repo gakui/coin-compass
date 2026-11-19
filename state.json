@@ -1,5 +1,5 @@
 {
- "brief_date": "2026-11-18",
+ "brief_date": "2026-11-19",
  "fired": {},
  "fng_zone": "fear",
  "labels": {
@@ -10,7 +10,7 @@
   "chainlink": "WATCH",
   "dogecoin": "WATCH",
   "ethereum": "WATCH",
-  "ripple": "WATCH",
+  "ripple": "HOLD",
   "solana": "WATCH",
   "tron": "HOLD"
  },
