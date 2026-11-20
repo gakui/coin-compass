@@ -3,7 +3,7 @@
  "fired": {},
  "fng_zone": "fear",
  "labels": {
-  "avalanche-2": "HOLD",
+  "avalanche-2": "WATCH",
   "binancecoin": "WATCH",
   "bitcoin": "WATCH",
   "cardano": "WATCH",
@@ -14,6 +14,6 @@
   "solana": "WATCH",
   "tron": "HOLD"
  },
- "last_run_date": "2026-11-19",
+ "last_run_date": "2026-11-20",
  "moves": {}
 }
