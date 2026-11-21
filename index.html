@@ -54,6 +54,19 @@ h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:6px}
 .rowwrap{display:grid;gap:0}
 .row.ord{grid-template-columns:24px minmax(0,1fr) 44px 44px}
 .row.ord .iconbtn:disabled{opacity:.3}
+.fcgrid{display:grid;grid-template-columns:minmax(64px,1.1fr) repeat(6,1fr);gap:4px;align-items:stretch;font-variant-numeric:tabular-nums}
+.fcgrid .h{font-size:11.5px;color:var(--muted);text-align:center;padding:2px 0}
+.fcgrid .c{border-radius:8px;text-align:center;padding:9px 0;font-size:13px;font-weight:600;background:var(--surface2)}
+.fcgrid button.sym{font-weight:700;padding:9px 4px;border-radius:8px;min-height:40px}
+.fcgrid button.sym.on{background:var(--surface2);color:var(--accent)}
+.hz{display:grid;grid-template-columns:44px 1fr;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+.hz:last-child{border:0}
+.hz .k{font-weight:700}
+.hz .p{font-size:17px;font-weight:700}
+.hz .r{font-size:13px;color:var(--muted)}
+.bar2{height:6px;border-radius:4px;background:var(--surface2);position:relative;margin:6px 0 2px}
+.bar2 i{position:absolute;top:-3px;width:2px;height:12px;background:var(--text)}
+.bar2 b{position:absolute;top:0;height:6px;border-radius:4px;background:color-mix(in srgb,var(--accent) 55%,transparent)}
 .rec{background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden}
 .rec .row{border:0;border-radius:0;background:none}
 .rec .why{display:flex;flex-wrap:wrap;gap:6px;padding:0 12px 10px}
@@ -76,8 +89,8 @@ h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:6px}
 .chips::-webkit-scrollbar{display:none}
 .chips button{flex:none;padding:8px 14px;border-radius:99px;background:var(--surface);border:1px solid var(--line);min-height:40px}
 .chips button.on{background:var(--accent);color:#14202A;border-color:var(--accent);font-weight:650}
-.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;display:grid;grid-template-columns:repeat(5,1fr);background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-.tabs button{display:grid;justify-items:center;gap:2px;padding:9px 0 8px;font-size:11.5px;color:var(--muted);min-height:56px;text-align:center}
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;display:grid;grid-template-columns:repeat(6,1fr);background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
+.tabs button{display:grid;justify-items:center;gap:2px;padding:9px 0 8px;font-size:11px;color:var(--muted);min-height:56px;text-align:center}
 .tabs button.on{color:var(--accent);font-weight:650}
 .tabs svg{width:22px;height:22px}
 .field{display:grid;gap:6px;margin-bottom:10px}
@@ -248,7 +261,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('cc.'+k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem('cc.'+k,JSON.stringify(v))}catch{}}};
 const S={base:store.get('base',DEFAULT_BASE),alerts:store.get('alerts',[]),pf:store.get('pf',[]),skip:store.get('skip',[]),ntfy:store.get('ntfy',''),notifyOn:store.get('notifyOn',false),
-  mk:{},top:[],glob:null,fng:null,fngHist:[],candles:{},sig:{},news:[],tab:'market',sub:null,newsFilter:'ALL',updated:null,loading:false,bt:null,swReg:null,sheet:null,reorder:false};
+  mk:{},top:[],glob:null,fng:null,fngHist:[],candles:{},sig:{},news:[],tab:'market',sub:null,newsFilter:'ALL',updated:null,loading:false,bt:null,swReg:null,sheet:null,fc:null,fcCoin:null,fcMissing:false,reorder:false};
 
 const fp=p=>p==null?'–':p>=1000?p.toLocaleString('en-US',{maximumFractionDigits:0}):p>=1?p.toFixed(2):p>=0.01?p.toFixed(4):p.toFixed(6);
 const pc=x=>x==null?'<span class="muted">–</span>':`<span class="${x>=0?'up':'down'}">${x>=0?'+':''}${x.toFixed(1)}%</span>`;
@@ -370,7 +383,7 @@ async function loadAll(){
   S.loading=true;$('#refreshBtn svg').classList.add('spin');render();
   try{
     await loadMarkets();
-    await Promise.all([loadMacro(),loadNews()]);
+    await Promise.all([loadMacro(),loadNews(),loadForecast()]);
     S.updated=new Date();render();
     await loadCandles(S.base);
     checkAlerts();
@@ -554,10 +567,73 @@ function settingsView(){
    <h2>Data</h2><div class="card"><button class="btn danger block" data-act="wipe">Clear everything saved on this phone</button></div>
    <p class="note">Prices: CoinGecko. History: Binance, with CoinGecko as backup. News: CoinDesk, Cointelegraph and Decrypt. Market mood: alternative.me. Everything here is information only, not financial advice.</p>`;
 }
+/* ---------- forecast ---------- */
+const HZS=['1h','3h','6h','12h','24h','7d'];
+async function loadForecast(){
+  try{
+    const r=await fetch('forecasts.json?'+Date.now());
+    if(!r.ok)throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    if(!j||!j.coins)throw new Error('empty');
+    S.fc=j;S.fcMissing=false;
+  }catch{if(!S.fc)S.fcMissing=true}
+}
+function headlineMult(id){
+  const m=S.mk[id];if(!m)return 1;
+  const cut=Date.now()/1000-86400,recent=S.news.filter(n=>n.published_on>=cut);
+  const hot=n=>tagsFor(n.title).some(t=>t!=='Product');
+  const own=recent.filter(n=>mentions(n,m)&&hot(n));
+  const sec=own.some(n=>tagsFor(n.title).includes('Security'));
+  const macro=recent.filter(n=>tagsFor(n.title).includes('Macro')).length;
+  return(own.length>=2||sec||macro>=4)?1.25:1;
+}
+const lean=p=>{const d=p-0.5,a=Math.abs(d);return a<0.03?{t:'No edge',c:'muted'}:{t:(a<0.06?'Slight lean ':'Lean ')+(d>0?'up':'down'),c:d>0?'up':'down'}};
+const tint=p=>`background:color-mix(in srgb,var(${p>=0.5?'--up':'--down'}) ${(Math.min(Math.abs(p-0.5)/0.12,1)*55).toFixed(0)}%,var(--surface2))`;
+const rp=v=>(v>=0?'+':'−')+(Math.abs(v)*100).toFixed(Math.abs(v)<0.1?1:0)+'%';
+function widen(q,k){const md=q[2];return q.map(v=>md+(v-md)*k)}
+function fcView(){
+  const F=S.fc;
+  if(!F)return S.fcMissing?`<div class="banner"><b>No forecasts yet.</b> In your GitHub repo open <b>Actions</b>, choose <b>coin-compass-forecast</b>, tap <b>Run workflow</b>, wait about 2 minutes, then tap refresh here.</div>`:'<div class="empty">Loading forecasts…</div>';
+  const ids=S.base.filter(id=>F.coins[id]);
+  const age=Math.round((Date.now()-Date.parse(F.generated_at))/60000);
+  let h=`<div class="banner">These are <b>probabilities, not predictions</b>. Short-term crypto moves are mostly noise, so many readings will say “No edge”, and that is the honest answer. Check the track record below before leaning on any of it. Information only, not financial advice.</div>`;
+  h+=`<p class="note" style="margin-top:0">Model run ${new Date(F.generated_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})} (${age<90?age+' min':Math.round(age/60)+' h'} ago)${age>180?' — <b class="down">stale, check the Actions tab</b>':''}</p>`;
+  if(!ids.length)return h+'<div class="empty">No base coins in the latest run yet.</div>';
+  const sel=ids.includes(S.fcCoin)?S.fcCoin:ids[0];
+  h+=`<section class="card"><b>Chance of being higher than now</b><p class="note" style="margin:2px 0 10px">Green leans up, red leans down, grey means no clear edge. Tap a coin for ranges.</p>
+   <div class="fcgrid"><span></span>${HZS.map(k=>`<span class="h">${k}</span>`).join('')}${ids.map(id=>{const c=F.coins[id];return `<button class="sym ${id===sel?'on':''}" data-act="fcc" data-id="${esc(id)}">${esc(c.symbol)}</button>`+HZS.map(k=>{const f=c.h[k];return f?`<span class="c" style="${tint(f.p)}">${Math.round(f.p*100)}%</span>`:'<span class="c muted">–</span>'}).join('')}).join('')}</div></section>`;
+  const c=F.coins[sel],mult=headlineMult(sel),m=S.mk[sel];
+  h+=`<h2>${esc(m?m.name:c.symbol)}<small>at run time $${fp(c.price)}</small></h2><section class="card">`;
+  if(mult>1)h+=`<div class="banner" style="margin-bottom:6px"><b>Headline risk is elevated.</b> Recent news (security, regulation or macro) makes bigger swings more likely, so the ranges below are widened by 25%.</div>`;
+  h+=HZS.map(k=>{
+    const f=c.h[k];if(!f)return '';
+    const q=widen(f.q,mult),L=lean(f.p),lo=q[0],hi=q[4],span=(hi-lo)||1,pos=v=>Math.max(0,Math.min(100,(v-lo)/span*100));
+    return `<div class="hz"><div class="k">${k}</div><div><div class="p">${Math.round(f.p*100)}% <span class="${L.c}" style="font-size:13px;font-weight:600">${L.t}</span></div>
+     <div class="r">Likely range <b style="color:var(--text)">${rp(q[1])} to ${rp(q[3])}</b> ($${fp(c.price*(1+q[1]))} to $${fp(c.price*(1+q[3]))})</div>
+     <div class="bar2" aria-hidden="true"><b style="left:${pos(q[1]).toFixed(0)}%;width:${(pos(q[3])-pos(q[1])).toFixed(0)}%"></b><i style="left:${pos(0).toFixed(0)}%"></i></div>
+     <div class="r">Wide range ${rp(q[0])} to ${rp(q[4])}</div></div></div>`}).join('');
+  h+='</section>';
+  const mo=F.model||{},lv=F.live||{};
+  h+=`<h2>Track record<small>how right has it been?</small></h2><section class="card"><div class="fcgrid" style="grid-template-columns:44px 1fr 1fr 1fr;gap:6px 8px"><span></span><span class="h">Tested</span><span class="h">Vs coin-flip</span><span class="h">Live</span>`+HZS.map(k=>{
+    const t=mo[k],l=lv[k];if(!t)return `<b>${k}</b><span class="c muted">–</span><span class="c muted">–</span><span class="c muted">–</span>`;
+    const edge=(t.acc-t.acc_base)*100;
+    return `<b style="align-self:center">${k}</b><span class="c">${(t.acc*100).toFixed(1)}%</span><span class="c ${edge>=1.5?'up':edge<=-1.5?'down':'muted'}">${edge>=0?'+':'−'}${Math.abs(edge).toFixed(1)} pts</span><span class="c ${l&&l.n?'':'muted'}">${l&&l.n?`${Math.round(l.hits/l.n*100)}% (${l.n})`:'–'}</span>`}).join('')+'</div>';
+  const cv=HZS.map(k=>mo[k]).filter(Boolean);
+  if(cv.length)h+=`<p class="note">Range check on unseen history: the 50% range held ${(cv.reduce((a,t)=>a+t.cov50,0)/cv.length*100).toFixed(0)}% of the time and the 90% range ${(cv.reduce((a,t)=>a+t.cov90,0)/cv.length*100).toFixed(0)}%, as intended.</p>`;
+  h+=`<p class="note"><b>Tested</b> = how often the up/down call was right on recent history the model never saw. <b>Vs coin-flip</b> = how many points better than always guessing the more common outcome. <b>Live</b> = real forecasts scored after the fact${F.since?`, since ${esc(F.since)}`:''}, with the number scored in brackets. A gap of a point or two is small, so only trust it once the live count is in the hundreds and still positive.</p></section>`;
+  h+=`<details class="card" style="margin-top:12px"><summary style="cursor:pointer;min-height:28px"><b>How does this work?</b></summary>
+   <p style="margin:10px 0 6px"><b>Inputs.</b> For each coin the model reads momentum over several windows (1 hour to 1 week), how calm or wild the market is compared with normal, RSI, how far price sits from its weekly average, what Bitcoin is doing and the Fear &amp; Greed index. Each is scaled by that coin’s own volatility so one model can learn from all your coins at once.</p>
+   <p style="margin:6px 0"><b>The model.</b> A simple logistic regression, one per time horizon. It learns from history how often price was higher afterwards when the inputs looked like they do now, and outputs a probability. It is kept deliberately simple and heavily dampened so it does not memorise noise.</p>
+   <p style="margin:6px 0"><b>The ranges.</b> Width comes from current volatility, calibrated on history, so calm markets give narrow ranges and wild ones give wide ranges. Volatility is the part of the future that is actually predictable.</p>
+   <p style="margin:6px 0"><b>News.</b> Headlines cannot be tested against years of history here, so they do not move the up/down odds. Instead, security, regulation and macro headlines widen the ranges, because news raises the chance of big moves in either direction.</p>
+   <p style="margin:6px 0"><b>Honesty check.</b> Every hour the forecasts are saved and scored when their time arrives. That live record is the real test. Surprise events, such as a hack or a sudden Fed move, can break any model.</p></details>`;
+  return h;
+}
 function render(){
   const y=scrollY;let h='';
   if(S.tab==='market')h=marketView();
   else if(S.tab==='signals')h=signalsView();
+  else if(S.tab==='forecast')h=fcView();
   else if(S.tab==='news')h=newsView();
   else if(S.tab==='alerts')h=alertsView();
   else h=S.sub==='portfolio'?pfView():S.sub==='fund'?fundView():S.sub==='macro'?macroView():S.sub==='bt'?btView():S.sub==='settings'?settingsView():moreView();
@@ -565,8 +641,8 @@ function render(){
   $('#view').innerHTML=h;
   Object.entries(keep).forEach(([k,v])=>{const e=document.getElementById(k);if(e)e.value=v});
   scrollTo(0,y);
-  const ic={market:'<path d="M3 17l5-6 4 4 8-9"/><path d="M15 6h5v5"/>',signals:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',news:'<path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M8 9h5M8 13h5"/>',alerts:'<path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15z"/><path d="M10 21h4"/>',more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
-  const nm={market:'Market',signals:'Signals',news:'News',alerts:'Alerts',more:'More'};
+  const ic={forecast:'<path d="M3 17l5-5 4 3 5-7"/><path d="M17 8l4-3M21 5v4M21 5h-4"/>',market:'<path d="M3 17l5-6 4 4 8-9"/><path d="M15 6h5v5"/>',signals:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',news:'<path d="M4 5h13v14H6a2 2 0 0 1-2-2z"/><path d="M17 9h3v8a2 2 0 0 1-2 2"/><path d="M8 9h5M8 13h5"/>',alerts:'<path d="M6 17V11a6 6 0 0 1 12 0v6l1.5 2h-15z"/><path d="M10 21h4"/>',more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'};
+  const nm={market:'Market',signals:'Signals',forecast:'Forecast',news:'News',alerts:'Alerts',more:'More'};
   $('#tabs').innerHTML=Object.keys(nm).map(k=>`<button data-act="tab" data-t="${k}" class="${S.tab===k?'on':''}" aria-label="${nm[k]}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ic[k]}</svg>${nm[k]}</button>`).join('');
   $('#stamp').textContent=S.updated?'Updated '+S.updated.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}):'Loading…';
 }
@@ -614,6 +690,7 @@ document.addEventListener('click',async e=>{
   else if(a==='coin')openCoin(id);
   else if(a==='close')closeSheet();
   else if(a==='nf'){S.newsFilter=el.dataset.f;render()}
+  else if(a==='fcc'){S.fcCoin=id;render()}
   else if(a==='adopt'){if(!S.base.includes(id)){setBase([...S.base,id]);toast(`${S.mk[id].name} added to your base coins`);closeSheet();await loadMarkets();render();loadCandles([id])}}
   else if(a==='reorder'){S.reorder=!S.reorder;render()}
   else if(a==='mv'){const i=S.base.indexOf(id),j=i+(+el.dataset.d);if(i>-1&&j>=0&&j<S.base.length){const b=[...S.base];[b[i],b[j]]=[b[j],b[i]];setBase(b);render()}}
