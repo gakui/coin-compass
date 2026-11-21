@@ -16,7 +16,8 @@ html,body{margin:0;background:var(--bg);color:var(--text)}
 body{font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.45;padding-top:env(safe-area-inset-top,0px)}
 button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}
 input,select{font:inherit;color:var(--text);background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-height:44px}
-input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+textarea{font:inherit;color:var(--text);background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;width:100%;min-height:96px}
+textarea:focus,input:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 a{color:var(--accent)}
 .top{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-items:center;justify-content:space-between;padding:12px 16px 10px;border-bottom:1px solid var(--line)}
 .top h1{font-size:19px;font-weight:700;margin:0;letter-spacing:.2px}
@@ -261,7 +262,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const store={get(k,d){try{const v=localStorage.getItem('cc.'+k);return v==null?d:JSON.parse(v)}catch{return d}},set(k,v){try{localStorage.setItem('cc.'+k,JSON.stringify(v))}catch{}}};
 const S={base:store.get('base',DEFAULT_BASE),alerts:store.get('alerts',[]),pf:store.get('pf',[]),skip:store.get('skip',[]),ntfy:store.get('ntfy',''),notifyOn:store.get('notifyOn',false),
-  mk:{},top:[],glob:null,fng:null,fngHist:[],candles:{},sig:{},news:[],tab:'market',sub:null,newsFilter:'ALL',updated:null,loading:false,bt:null,swReg:null,sheet:null,fc:null,fcCoin:null,fcMissing:false,reorder:false};
+  mk:{},top:[],glob:null,fng:null,fngHist:[],candles:{},sig:{},news:[],tab:'market',sub:null,newsFilter:'ALL',updated:null,loading:false,bt:null,swReg:null,sheet:null,fx:null,cur:store.get('cur','USD'),paper:null,paperMissing:false,fc:null,fcCoin:null,fcMissing:false,reorder:false};
 
 const fp=p=>p==null?'–':p>=1000?p.toLocaleString('en-US',{maximumFractionDigits:0}):p>=1?p.toFixed(2):p>=0.01?p.toFixed(4):p.toFixed(6);
 const pc=x=>x==null?'<span class="muted">–</span>':`<span class="${x>=0?'up':'down'}">${x>=0?'+':''}${x.toFixed(1)}%</span>`;
@@ -302,6 +303,11 @@ async function loadMarkets(){
   if(top.status==='fulfilled'){S.top=top.value;top.value.forEach(c=>S.mk[c.id]=c)}
   if(own.status==='fulfilled')own.value.forEach(c=>S.mk[c.id]=c);
   if(own.status==='rejected'&&top.status==='rejected')throw new Error('markets');
+}
+async function loadFx(){try{const j=await cached('fx',21600000,()=>fj('https://open.er-api.com/v6/latest/USD'));const r=j&&j.rates&&j.rates.KES;if(r>0)S.fx=r}catch{}}
+async function loadPaper(){
+  try{const r=await fetch('paper.json?'+Date.now());if(!r.ok)throw new Error('x');const j=await r.json();if(!j||!j.s)throw new Error('x');S.paper=j;S.paperMissing=false}
+  catch{if(!S.paper)S.paperMissing=true}
 }
 async function loadMacro(){
   const[g,f]=await Promise.allSettled([
@@ -383,7 +389,7 @@ async function loadAll(){
   S.loading=true;$('#refreshBtn svg').classList.add('spin');render();
   try{
     await loadMarkets();
-    await Promise.all([loadMacro(),loadNews(),loadForecast()]);
+    await Promise.all([loadMacro(),loadNews(),loadForecast(),loadFx(),loadPaper()]);
     S.updated=new Date();render();
     await loadCandles(S.base);
     checkAlerts();
@@ -513,7 +519,7 @@ function alertsView(){
   return h;
 }
 function moreView(){
-  const items=[['portfolio','Portfolio','Holdings and profit or loss'],['fund','Fundamentals','What each coin is for, and its risks'],['macro','Macro','Fed date, market mood, what to watch'],['bt','Backtest','How simple rules did historically'],['settings','Settings','Base coins, reset, about']];
+  const items=[['portfolio','Portfolio','Holdings and profit or loss'],['paper','Paper bot','Pretend-money trading to test rules'],['fund','Fundamentals','What each coin is for, and its risks'],['macro','Macro','Fed date, market mood, what to watch'],['bt','Backtest','How simple rules did historically'],['settings','Settings','Base coins, reset, about']];
   return `<div class="card menu">${items.map(i=>`<button class="item" style="width:100%" data-act="sub" data-s="${i[0]}"><span><b>${i[1]}</b><br><span class="muted" style="font-size:13px">${i[2]}</span></span><span class="muted">›</span></button>`).join('')}</div>`;
 }
 const back=t=>`<button class="btn ghost" data-act="sub" data-s="" style="margin-bottom:12px">‹ More</button><h2 style="margin-top:4px">${t}</h2>`;
@@ -551,14 +557,39 @@ function btView(){
   }
   return h;
 }
+const money=(usd,d=0)=>S.cur==='KES'&&S.fx?'KSh'+(usd*S.fx).toLocaleString('en-US',{maximumFractionDigits:d}):'$'+usd.toLocaleString('en-US',{maximumFractionDigits:d});
+const unitPx=usd=>S.cur==='KES'&&S.fx?'KSh'+fp(usd*S.fx):'$'+fp(usd);
 function pfView(){
   let h=back('Portfolio'),tot=0,cost=0;
-  const rows=S.pf.map((p,i)=>{const m=S.mk[p.id];const v=m?m.current_price*p.amt:0,c=p.px*p.amt;tot+=v;cost+=c;const pl=c?(v/c-1)*100:null;return `<div class="item"><span><b>${esc(m?m.symbol.toUpperCase():p.id)}</b> <span class="muted">${p.amt} @ $${fp(p.px)}</span><br>$${v.toLocaleString('en-US',{maximumFractionDigits:0})} ${pc(pl)}</span><button class="btn ghost" data-act="pfdel" data-i="${i}" aria-label="Remove holding">Remove</button></div>`}).join('');
-  h+=`<div class="card"><div class="kv"><span>Value</span><span>$${tot.toLocaleString('en-US',{maximumFractionDigits:0})}</span><span>Cost</span><span>$${cost.toLocaleString('en-US',{maximumFractionDigits:0})}</span><span>Profit / loss</span><span>${cost?pc((tot/cost-1)*100):'–'}</span></div></div>`;
+  const rows=S.pf.map((p,i)=>{const m=S.mk[p.id];const v=m?m.current_price*p.amt:0,c=p.px*p.amt;tot+=v;cost+=c;const pl=c?(v/c-1)*100:null;return `<div class="item"><span><b>${esc(m?m.symbol.toUpperCase():p.id)}</b> <span class="muted">${p.amt} @ ${unitPx(p.px)}</span><br>${money(v)} ${pc(pl)}</span><button class="btn ghost" data-act="pfdel" data-i="${i}" aria-label="Remove holding">Remove</button></div>`}).join('');
+  h+=`<div class="two" style="margin-bottom:10px"><button class="btn ${S.cur==='USD'?'':'ghost'}" data-act="cur" data-c="USD">USD</button><button class="btn ${S.cur==='KES'?'':'ghost'}" data-act="cur" data-c="KES">KSh</button></div>`;
+  if(S.cur==='KES'&&!S.fx)h+='<div class="banner">Exchange rate not loaded yet, so amounts show in USD. Tap refresh.</div>';
+  h+=`<div class="card"><div class="kv"><span>Value</span><span>${money(tot)}</span><span>Cost</span><span>${money(cost)}</span><span>Profit / loss</span><span>${cost?`${money(tot-cost)} ${pc((tot/cost-1)*100)}`:'–'}</span></div>${S.fx?`<p class="note" style="margin:8px 0 0">1 USD = ${S.fx.toFixed(1)} KSh</p>`:''}</div>`;
   h+=`<h2>Holdings</h2><div class="card">${rows||'<div class="empty">Add what you hold to track profit or loss.</div>'}</div>`;
+  h+=`<h2>Import from your exchange</h2><div class="card"><p style="margin:0 0 8px" class="muted">One line per coin: symbol, amount, total cost in KSh. Cost is your balance value plus your unrealized loss (or minus your gain).</p><textarea id="pf-imp" placeholder="BNB 0.230094 21392.21&#10;SOL 0.15629999 1940.65" aria-label="Holdings to import"></textarea><button class="btn block" style="margin-top:8px" data-act="pfimport">Import holdings</button></div>`;
   h+=`<h2>Add a holding</h2><div class="card"><div class="field"><label for="pf-coin">Coin</label><select id="pf-coin">${S.base.filter(id=>S.mk[id]).map(id=>`<option value="${esc(id)}">${esc(S.mk[id].name)}</option>`).join('')}</select></div>
-   <div class="two"><div class="field"><label for="pf-amt">Amount</label><input id="pf-amt" inputmode="decimal" placeholder="0.5"></div><div class="field"><label for="pf-px">Average buy price (USD)</label><input id="pf-px" inputmode="decimal" placeholder="65000"></div></div><button class="btn block" data-act="pfadd">Add holding</button></div>
+   <div class="two"><div class="field"><label for="pf-amt">Amount</label><input id="pf-amt" inputmode="decimal" placeholder="0.5"></div><div class="field"><label for="pf-px">Average buy price (${S.cur==='KES'&&S.fx?'KSh':'USD'})</label><input id="pf-px" inputmode="decimal" placeholder="65000"></div></div><button class="btn block" data-act="pfadd">Add holding</button></div>
    <p class="note">Saved on this phone only.</p>`;
+  return h;
+}
+function paperView(){
+  let h=back('Paper bot');const P=S.paper;
+  if(!P)return h+(S.paperMissing?'<div class="banner"><b>No paper results yet.</b> In your GitHub repo open <b>Actions</b>, choose <b>coin-compass-forecast</b>, tap <b>Run workflow</b>, wait about 2 minutes, then tap refresh here.</div>':'<div class="empty">Loading…</div>');
+  const days=Math.max(0.1,(Date.now()/1000-P.start_ts)/86400),hodl=P.s.find(x=>x.k==='hodl');
+  h+=`<div class="banner">This bot trades <b>pretend money only</b>: $${P.capital} split across ${P.coins.length} coins, with real-style fees. It tests whether any simple rule beats just holding, before real money is involved. Running ${days<2?'under 2 days':days.toFixed(0)+' days'} since ${esc(P.start)}.${days<14?' <b>A few days says almost nothing. Judge after several weeks.</b>':''}</div>`;
+  const cols={dip:'var(--accent)',trend:'var(--up)',signal:'var(--warm)',hodl:'var(--muted)'};
+  const H=P.hist||[];
+  if(H.length>2){
+    const all=H.flatMap(r=>Object.values(r[1])),mn=Math.min(...all),mx=Math.max(...all),w=320,hh=120;
+    const line=k=>`<polyline points="${H.map((r,i)=>`${(i/(H.length-1)*w).toFixed(1)},${(hh-4-(r[1][k]-mn)/(mx-mn||1)*(hh-8)).toFixed(1)}`).join(' ')}" fill="none" style="stroke:${cols[k]}" stroke-width="2" stroke-linejoin="round"/>`;
+    h+=`<div class="card"><svg class="wide" viewBox="0 0 ${w} ${hh}" aria-label="Pretend balance over time">${P.s.map(x=>line(x.k)).join('')}</svg><div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:12.5px">${P.s.map(x=>`<span><span style="color:${cols[x.k]}">━</span> ${esc(x.name)}</span>`).join('')}</div></div>`;
+  }
+  h+='<div style="height:12px"></div>'+P.s.map(x=>{
+    const vs=hodl&&x.k!=='hodl'?(x.ret-hodl.ret)*100:null;
+    return `<article class="card sig"><header><b>${esc(x.name)}</b><span class="${x.ret>=0?'up':'down'}" style="font-weight:700">${x.ret>=0?'+':'−'}${Math.abs(x.ret*100).toFixed(1)}%</span></header><div class="kv" style="margin-top:8px"><span>Pretend balance</span><span>$${x.eq.toFixed(2)}</span>${vs!=null?`<span>Versus buy and hold</span><span class="${vs>=0?'up':'down'}">${vs>=0?'+':'−'}${Math.abs(vs).toFixed(1)} pts</span>`:''}<span>Finished trades</span><span>${x.k==='hodl'?'none':x.closed+(x.closed?` (${Math.round(x.wins/x.closed*100)}% won)`:'')}</span><span>Worst drop so far</span><span>${(x.mdd*100).toFixed(1)}%</span><span>Holding now</span><span>${x.open.length?esc(x.open.join(', ')):'cash only'}</span></div></article>`}).join('');
+  const names=Object.fromEntries(P.s.map(x=>[x.k,x.name]));
+  h+=`<h2>Recent trades</h2><div class="card">`+((P.recent||[]).length?P.recent.slice(0,12).map(t=>`<div class="item" style="align-items:flex-start"><span><b>${t.side==='BUY'?'Bought':'Sold'} ${esc(t.c)}</b> <span class="muted">${esc(names[t.s]||t.s)}</span><br><span class="muted" style="font-size:13px">${esc(t.why)}${t.pnl!=null?` · ${t.pnl>=0?'+':'−'}${Math.abs(t.pnl*100).toFixed(1)}%`:''}</span></span><span class="muted" style="font-size:12.5px;text-align:right">${new Date(t.t*1000).toLocaleDateString([],{month:'short',day:'numeric'})}<br>$${fp(t.p)}</span></div>`).join(''):'<div class="empty" style="padding:12px">No trades yet. The rules wait for their setups, and some can stay in cash for weeks.</div>')+`</div>`;
+  h+=`<p class="note"><b>The rules.</b> Dip buyer: buys when RSI drops under 30, sells above 55 or at a 15% stop. Trend follower: holds a coin only while it is above its 200-day average. Signal follower: buys at Accumulate, sells when the signal drops to Hold or worse, with a 12% stop. Buy and hold: the benchmark. Balances are marked at market price and ignore the cost of the final sale. It uses the coins you had when it started.</p>`;
   return h;
 }
 function settingsView(){
@@ -650,7 +681,7 @@ function render(){
   else if(S.tab==='forecast')h=fcView();
   else if(S.tab==='news')h=newsView();
   else if(S.tab==='alerts')h=alertsView();
-  else h=S.sub==='portfolio'?pfView():S.sub==='fund'?fundView():S.sub==='macro'?macroView():S.sub==='bt'?btView():S.sub==='settings'?settingsView():moreView();
+  else h=S.sub==='portfolio'?pfView():S.sub==='paper'?paperView():S.sub==='fund'?fundView():S.sub==='macro'?macroView():S.sub==='bt'?btView():S.sub==='settings'?settingsView():moreView();
   const keep={};document.querySelectorAll('main input,main select').forEach(e=>{if(e.id)keep[e.id]=e.value});
   $('#view').innerHTML=h;
   Object.entries(keep).forEach(([k,v])=>{const e=document.getElementById(k);if(e)e.value=v});
@@ -736,7 +767,19 @@ document.addEventListener('click',async e=>{
   else if(a==='pfadd'){
     const coin=$('#pf-coin')?.value,amt=num('pf-amt'),px=num('pf-px');
     if(!coin||!(amt>0)||!(px>0)){toast('Enter an amount and price above 0');return}
-    S.pf.push({id:coin,amt,px});store.set('pf',S.pf);render();
+    S.pf.push({id:coin,amt,px:S.cur==='KES'&&S.fx?px/S.fx:px});store.set('pf',S.pf);render();
+  }
+  else if(a==='cur'){S.cur=el.dataset.c;store.set('cur',S.cur);render()}
+  else if(a==='pfimport'){
+    if(!S.fx){toast('Exchange rate not loaded yet. Tap refresh and try again.');return}
+    const bySym={};S.base.forEach(id=>{const m=S.mk[id];if(m)bySym[m.symbol.toUpperCase()]=id});
+    let n=0,bad=0;
+    (document.getElementById('pf-imp')?.value||'').split(/\n/).map(l=>l.trim()).filter(Boolean).forEach(l=>{
+      const[sym,amt,cost]=l.split(/\s+/),id=bySym[(sym||'').toUpperCase()],q=parseFloat(String(amt||'').replace(/,/g,'')),c=parseFloat(String(cost||'').replace(/,/g,''));
+      if(!id||!(q>0)||!(c>0)){bad++;return}
+      S.pf=S.pf.filter(p=>p.id!==id);S.pf.push({id,amt:q,px:c/S.fx/q});n++;
+    });
+    store.set('pf',S.pf);toast(n?`Imported ${n} holding${n>1?'s':''}${bad?`, skipped ${bad}`:''}`:'Nothing imported. Use lines like: BNB 0.23 21392');render();
   }
   else if(a==='pfdel'){S.pf.splice(+el.dataset.i,1);store.set('pf',S.pf);render()}
 });

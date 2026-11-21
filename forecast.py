@@ -573,6 +573,15 @@ def run(fetch_hourly=None, fetch_daily=None, fetch_fng=None, fetch_markets=None,
     with open(os.path.join(out_dir, "forecasts.json"), "w", encoding="utf-8") as fh:
         json.dump(result, fh, separators=(",", ":"))
     print(f"done: {len(out_coins)} coins, {len(still_open)} open forecasts")
+    try:
+        import paper_bot
+
+        paper_bot.step(out_dir, now_ts, {
+            cid: {"price": float(Hc[cid][-1]), "daily": Dc[cid].tolist(), "sym": out_coins[cid]["symbol"]}
+            for cid in coins if cid in out_coins
+        }, fng[max(fng)] if fng else None)
+    except Exception as e:  # noqa: BLE001
+        print("paper bot failed:", e)
     if notify:
         try:
             alert_pass(result, cfg, out_dir, os.environ.get("NTFY_TOPIC", ""), os.environ.get("APP_URL", ""), now_ts, send_fn or send)
