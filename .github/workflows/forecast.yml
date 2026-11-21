@@ -1,0 +1,35 @@
+name: coin-compass-forecast
+
+on:
+  schedule:
+    - cron: "20 * * * *"   # hourly, at 20 minutes past
+  workflow_dispatch:       # lets you run it by hand from the Actions tab
+
+permissions:
+  contents: write
+
+concurrency:
+  group: coin-compass
+  cancel-in-progress: false
+
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install numpy
+        run: pip install numpy
+      - name: Build forecasts and send alerts
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          APP_URL: ${{ vars.APP_URL }}
+        run: python forecast.py
+      - name: Save results
+        run: |
+          git config user.name "coin-compass-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add forecasts.json ledger.json fstate.json
+          git diff --staged --quiet || (git commit -m "Update forecasts" && git pull --rebase -q && git push)
