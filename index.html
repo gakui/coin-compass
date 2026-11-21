@@ -508,7 +508,7 @@ function alertsView(){
   h+=`<div class="two" style="margin-top:12px"><div class="field"><label for="al-coin">Coin</label><select id="al-coin">${S.base.filter(id=>S.mk[id]).map(id=>`<option value="${esc(id)}">${esc(S.mk[id].symbol.toUpperCase())}</option>`).join('')}</select></div>
    <div class="field"><label for="al-dir">When price</label><select id="al-dir"><option value="below">falls below</option><option value="above">rises above</option></select></div></div>
    <div class="field"><label for="al-px">Price in USD</label><input id="al-px" inputmode="decimal" placeholder="e.g. 60000"></div><button class="btn block" data-act="addalert">Add alert</button></div>`;
-  h+=`<h2>What the cloud job watches</h2><div class="card"><ul class="why-list" style="gap:8px"><li><b>•</b><span>A coin’s signal moving to Accumulate or Reduce</span></li><li><b>•</b><span>A move of 7% or more in 24 hours</span></li><li><b>•</b><span>Fear &amp; Greed entering extreme fear (15 or less) or extreme greed (80 or more)</span></li><li><b>•</b><span>Your price alerts above</span></li><li><b>•</b><span>A daily brief with every base coin</span></li></ul>
+  h+=`<h2>What the cloud job watches</h2><div class="card"><ul class="why-list" style="gap:8px"><li><b>•</b><span>A coin’s signal moving to Accumulate or Reduce</span></li><li><b>•</b><span>A strong forecast lean (56% or more either way), only when that horizon has beaten a coin flip on unseen history</span></li><li><b>•</b><span>Ranges widening sharply (a coin swinging 1.6× harder than normal)</span></li><li><b>•</b><span>A stretched, noisy move that has often partly reversed before</span></li><li><b>•</b><span>A move of 7% or more in 24 hours</span></li><li><b>•</b><span>Fear &amp; Greed entering extreme fear (15 or less) or extreme greed (80 or more)</span></li><li><b>•</b><span>Your price alerts above</span></li><li><b>•</b><span>A daily brief with every base coin</span></li></ul>
    <button class="btn ghost block" style="margin-top:12px" data-act="cfg">Copy my settings for the cloud job</button><p class="note">Paste the copied text into config.json in your GitHub repo so the cloud job uses your base coins and price alerts.</p></div>`;
   return h;
 }
@@ -614,6 +614,20 @@ function fcView(){
      <div class="r">Wide range ${rp(q[0])} to ${rp(q[4])}</div></div></div>`}).join('');
   h+='</section>';
   const mo=F.model||{},lv=F.live||{};
+  const vs=ids.filter(id=>F.coins[id].vol).sort((a,b)=>F.coins[b].vol.ratio-F.coins[a].vol.ratio);
+  if(vs.length){
+    h+=`<h2>Ranges right now<small>vs each coin’s normal</small></h2><section class="card">`+vs.map(id=>{
+      const c=F.coins[id],v=c.vol,tag=v.ratio>=1.6?'<span class="chip red">Wide</span>':v.ratio>=1.25?'<span class="chip watch">Widening</span>':v.ratio<=0.75?'<span class="chip hold">Quiet</span>':'<span class="chip hold">Normal</span>';
+      return `<div class="item"><span><b>${esc(c.symbol)}</b> ${tag}</span><span class="muted" style="text-align:right">${v.ratio.toFixed(1)}× normal · typical 24h move ±${(v.move24*100).toFixed(1)}%</span></div>`}).join('')+
+      `<p class="note" style="margin-bottom:0">“Wide” means a coin is swinging much harder than usual, so big gains and big drops are both more likely. Volatility is the most reliable thing the model measures.</p></section>`;
+  }
+  const ns=ids.filter(id=>F.coins[id].noise&&Math.abs(F.coins[id].noise.z)>=2);
+  if(ids.some(id=>F.coins[id].noise)){
+    h+=`<h2>Noise board<small>stretched moves</small></h2><section class="card">`+(ns.length?ns.map(id=>{
+      const c=F.coins[id],n=c.noise,up=n.z>0;
+      return `<div class="item" style="align-items:flex-start"><span><b>${esc(c.symbol)}</b> <span class="chip ${up?'acc':'red'}">${up?'Stretched up':'Stretched down'}</span></span><span class="muted" style="text-align:right;max-width:64%">${Math.abs(n.z).toFixed(1)}× its normal wobble over 6h. ${n.rate!=null?`After similar stretches the move partly reversed ${Math.round(n.rate*100)}% of the time (${n.n} cases, average giveback ${(n.avg*100).toFixed(2)}%).`:'Too few past cases to judge.'}</span></div>`}).join(''):'<div class="empty" style="padding:12px">Nothing is unusually stretched right now.</div>')+
+      `<p class="note" style="margin-bottom:0">“Noise” means a move bigger than a coin’s usual wobble. Such moves often give part of themselves back within hours, but round-trip fees are about 0.2%, which can swallow a small bounce. It is a clue, not a trade signal.</p></section>`;
+  }
   h+=`<h2>Track record<small>how right has it been?</small></h2><section class="card"><div class="fcgrid" style="grid-template-columns:44px 1fr 1fr 1fr;gap:6px 8px"><span></span><span class="h">Tested</span><span class="h">Vs coin-flip</span><span class="h">Live</span>`+HZS.map(k=>{
     const t=mo[k],l=lv[k];if(!t)return `<b>${k}</b><span class="c muted">–</span><span class="c muted">–</span><span class="c muted">–</span>`;
     const edge=(t.acc-t.acc_base)*100;
@@ -715,7 +729,7 @@ document.addEventListener('click',async e=>{
     try{const r=await fetch('https://ntfy.sh/'+encodeURIComponent(t),{method:'POST',body:'Test from Coin Compass. Alerts are working.'});toast(r.ok?'Test sent. Check the ntfy app.':'Could not send the test')}catch{toast('Could not send the test')}
   }
   else if(a==='cfg'){
-    const cfg=JSON.stringify({base:S.base,alerts:S.alerts.map(x=>({id:x.id,[x.dir]:x.price})),move_pct:7,brief_hour_utc:6},null,2);
+    const cfg=JSON.stringify({base:S.base,alerts:S.alerts.map(x=>({id:x.id,[x.dir]:x.price})),move_pct:7,brief_hour_utc:6,strong_lean:0.06,wide_ratio:1.6,lean_requires_edge:true,noise_alerts:true},null,2);
     try{await navigator.clipboard.writeText(cfg);toast('Copied. Paste it into config.json on GitHub.')}catch{prompt('Copy this into config.json:',cfg)}
   }
   else if(a==='btrun')runBacktest();

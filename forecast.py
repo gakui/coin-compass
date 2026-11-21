@@ -28,6 +28,7 @@ import math
 import os
 import sys
 import time
+import urllib.parse
 import urllib.request
 
 import numpy as np
@@ -285,7 +286,131 @@ def fng_array(ts, fng):
     return vals
 
 
-def run(fetch_hourly=None, fetch_daily=None, fetch_fng=None, fetch_markets=None, now=None, out_dir=None):
+# ---------------------------------------------------------------- noise, ranges, alerts
+def noise_stats(lp, sig, k=6, thr=2.0):
+    """How stretched is the last k-hour move, and what happened after similar stretches?"""
+    n = len(lp)
+    z = np.full(n, np.nan)
+    z[k:] = (lp[k:] - lp[:-k]) / (sig[k:] * math.sqrt(k))
+    ev = rev = 0
+    tot = 0.0
+    last = -10 ** 9
+    for t in range(max(60, k), n - k):
+        zt = z[t]
+        if np.isnan(zt) or abs(zt) < thr or t - last < k:  # one event per stretch
+            continue
+        last = t
+        ev += 1
+        giveback = -np.sign(zt) * (lp[t + k] - lp[t])
+        rev += int(giveback > 0)
+        tot += giveback
+    return {"z": float(z[-1]), "n": ev, "rate": (rev / ev) if ev else None, "avg": (tot / ev) if ev else None}
+
+
+def vol_regime(lp):
+    r, sig, sd_l = vol_estimate(lp, HOURLY_CFG)
+    sd_s = roll_std(r, HOURLY_CFG["short_n"])
+    return {
+        "ratio": float(sd_s[-1] / max(sd_l[-1], 1e-12)),
+        "move24": float(sig[-1] * math.sqrt(24)),
+        "norm24": float(sd_l[-1] * math.sqrt(24)),
+    }
+
+
+def load_at(folder, name, default):
+    try:
+        with open(os.path.join(folder, name), encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:  # noqa: BLE001
+        return default
+
+
+def send(topic, title, body, priority="default", tags="", click=""):
+    print(f"[notify] {title} | {body}")
+    if not topic:
+        return
+    h = {"Title": title.encode("ascii", "ignore").decode(), "Priority": priority, "Tags": tags}
+    if click:
+        h["Click"] = click
+    req = urllib.request.Request("https://ntfy.sh/" + urllib.parse.quote(topic), data=body.encode("utf-8"), headers=h, method="POST")
+    try:
+        urllib.request.urlopen(req, timeout=20).read()
+    except Exception as e:  # noqa: BLE001
+        print("ntfy error:", e)
+
+
+LEAN_HORIZONS = ["3h", "6h", "12h", "24h", "7d"]
+
+
+def alert_pass(result, cfg, folder, topic="", click="", now_ts=None, send_fn=send):
+    """Phone alerts: strong lean, ranges widening sharply, stretched (noisy) moves."""
+    now_ts = now_ts or time.time()
+    state = load_at(folder, "fstate.json", {})
+    first = not state.get("init")
+    lean_state, wide_state, noise_state = state.get("lean", {}), state.get("wide", {}), state.get("noise", {})
+    strong = float(cfg.get("strong_lean", 0.06))
+    wide_ratio = float(cfg.get("wide_ratio", 1.6))
+    need_edge = bool(cfg.get("lean_requires_edge", True))
+    noise_on = bool(cfg.get("noise_alerts", True))
+    model = result.get("model", {})
+    msgs = []
+    for cid, c in result["coins"].items():
+        sym = c["symbol"]
+        new = []
+        for k in LEAN_HORIZONS:
+            f = c["h"].get(k)
+            if not f:
+                continue
+            M = model.get(k)
+            ok = (not need_edge) or (M and M["acc"] - M["acc_base"] >= 0.01 and M["brier"] < M["brier_base"])
+            d = f["p"] - 0.5
+            direction = (1 if d > 0 else -1) if (abs(d) >= strong and ok) else 0
+            key = f"{cid}:{k}"
+            if direction != 0 and lean_state.get(key, 0) != direction:
+                new.append((k, f, M))
+            lean_state[key] = direction
+        if new:
+            up = new[0][1]["p"] > 0.5
+            lines = ", ".join(f"{k} {round(f['p'] * 100)}% chance higher" for k, f, _ in new)
+            k0, f0, M0 = new[0]
+            q = f0["q"]
+            body = (f"{sym}: {lines}. Likely {k0} range {q[1] * 100:+.1f}% to {q[3] * 100:+.1f}%. "
+                    f"On unseen history this horizon beat a coin flip by {(M0['acc'] - M0['acc_base']) * 100:.1f} pts. "
+                    "Information only, not advice.")
+            msgs.append((f"{sym}: strong lean {'up' if up else 'down'}", body, "default",
+                         "chart_with_upwards_trend" if up else "chart_with_downwards_trend"))
+        v = c.get("vol")
+        if v:
+            if v["ratio"] >= wide_ratio and not wide_state.get(cid):
+                wide_state[cid] = True
+                msgs.append((f"{sym}: ranges widening sharply",
+                             f"{sym} is swinging {v['ratio']:.1f}x harder than normal. Typical 24h move is now about "
+                             f"{v['move24'] * 100:.1f}% (normally {v['norm24'] * 100:.1f}%). Expect bigger moves both ways.",
+                             "high", "warning"))
+            elif v["ratio"] < 1.3:
+                wide_state[cid] = False
+        nz = c.get("noise")
+        if noise_on and nz and abs(nz["z"]) >= 2.5 and nz["n"] >= 8 and (nz["rate"] or 0) >= 0.55 and (nz["avg"] or 0) > 0 \
+                and now_ts - noise_state.get(cid, 0) > 12 * 3600:
+            noise_state[cid] = now_ts
+            msgs.append((f"{sym}: stretched move ({nz['z']:+.1f} sigma in 6h)",
+                         f"After similar stretches {sym} gave part of the move back {round(nz['rate'] * 100)}% of the time "
+                         f"({nz['n']} cases, average giveback {nz['avg'] * 100:.2f}%). Round-trip fees are about 0.2%, "
+                         "so the edge is thin. Information only.", "low", "microscope"))
+    state.update({"init": True, "lean": lean_state, "wide": wide_state, "noise": noise_state})
+    with open(os.path.join(folder, "fstate.json"), "w", encoding="utf-8") as fh:
+        json.dump(state, fh, separators=(",", ":"), sort_keys=True)
+    if first:
+        print(f"first run: recorded starting state, suppressed {len(msgs)} alert(s)")
+        return []
+    for title, body, prio, tags in msgs[:6]:
+        send_fn(topic, title, body, prio, tags, click)
+    if len(msgs) > 6:
+        send_fn(topic, "More forecast alerts waiting", f"{len(msgs) - 6} more. Open the Forecast tab.", "low", "inbox_tray", click)
+    return msgs
+
+
+def run(fetch_hourly=None, fetch_daily=None, fetch_fng=None, fetch_markets=None, now=None, out_dir=None, notify=True, send_fn=None):
     out_dir = out_dir or HERE
     cfg = load("config.json", {})
     base = list(cfg.get("base") or [])
@@ -386,6 +511,12 @@ def run(fetch_hourly=None, fetch_daily=None, fetch_fng=None, fetch_markets=None,
             p = float(predict(M["w"], ((x - M["mu"]) / M["sd"])[None, :])[0])
             q = np.exp(M["qz"] * sig * math.sqrt(h)) - 1
             entry["h"][key] = {"p": round(p, 4), "q": [round(float(v), 5) for v in q]}
+        try:
+            entry["vol"] = {k: round(v, 5) for k, v in vol_regime(LH[cid]).items()}
+            nz = noise_stats(LH[cid], SH[cid])
+            entry["noise"] = {k: (round(v, 5) if isinstance(v, float) else v) for k, v in nz.items()}
+        except Exception as e:  # noqa: BLE001
+            print(f"vol/noise failed for {cid}: {e}")
         out_coins[cid] = entry
 
     # ----- ledger: score matured forecasts, then record new ones
@@ -442,6 +573,11 @@ def run(fetch_hourly=None, fetch_daily=None, fetch_fng=None, fetch_markets=None,
     with open(os.path.join(out_dir, "forecasts.json"), "w", encoding="utf-8") as fh:
         json.dump(result, fh, separators=(",", ":"))
     print(f"done: {len(out_coins)} coins, {len(still_open)} open forecasts")
+    if notify:
+        try:
+            alert_pass(result, cfg, out_dir, os.environ.get("NTFY_TOPIC", ""), os.environ.get("APP_URL", ""), now_ts, send_fn or send)
+        except Exception as e:  # noqa: BLE001
+            print("alert pass failed:", e)
     return result
 
 

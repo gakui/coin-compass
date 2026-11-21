@@ -1,6 +1,21 @@
 {
-  "base": ["bitcoin", "ethereum", "ripple", "binancecoin", "solana", "tron", "dogecoin", "cardano", "chainlink", "avalanche-2"],
+  "base": [
+    "bitcoin",
+    "ethereum",
+    "ripple",
+    "binancecoin",
+    "solana",
+    "tron",
+    "dogecoin",
+    "cardano",
+    "chainlink",
+    "avalanche-2"
+  ],
   "alerts": [],
   "move_pct": 7,
-  "brief_hour_utc": 6
+  "brief_hour_utc": 6,
+  "strong_lean": 0.06,
+  "wide_ratio": 1.6,
+  "lean_requires_edge": true,
+  "noise_alerts": true
 }
