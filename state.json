@@ -10,11 +10,11 @@
   "chainlink": "WATCH",
   "dogecoin": "WATCH",
   "ethereum": "WATCH",
-  "ripple": "WATCH",
+  "ripple": "HOLD",
   "solana": "WATCH",
   "tron": "HOLD"
  },
- "last_run_date": "2026-11-23",
+ "last_run_date": "2026-11-24",
  "moves": {
   "avalanche-2": 1795204782.586689,
   "binancecoin": 1795204782.586689,
