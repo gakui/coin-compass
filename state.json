@@ -10,7 +10,7 @@
   "chainlink": "HOLD",
   "dogecoin": "WATCH",
   "ethereum": "WATCH",
-  "ripple": "HOLD",
+  "ripple": "WATCH",
   "solana": "WATCH",
   "tron": "HOLD"
  },
