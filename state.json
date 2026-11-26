@@ -4,17 +4,17 @@
  "fng_zone": "fear",
  "labels": {
   "avalanche-2": "WATCH",
-  "binancecoin": "WATCH",
+  "binancecoin": "HOLD",
   "bitcoin": "WATCH",
   "cardano": "WATCH",
-  "chainlink": "WATCH",
+  "chainlink": "HOLD",
   "dogecoin": "WATCH",
-  "ethereum": "WATCH",
-  "ripple": "WATCH",
+  "ethereum": "HOLD",
+  "ripple": "HOLD",
   "solana": "WATCH",
   "tron": "HOLD"
  },
- "last_run_date": "2026-11-25",
+ "last_run_date": "2026-11-26",
  "moves": {
   "avalanche-2": 1795204782.586689,
   "binancecoin": 1795204782.586689,
