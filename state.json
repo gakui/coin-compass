@@ -1,15 +1,15 @@
 {
- "brief_date": "2026-11-25",
+ "brief_date": "2026-11-26",
  "fired": {},
  "fng_zone": "fear",
  "labels": {
   "avalanche-2": "WATCH",
-  "binancecoin": "HOLD",
+  "binancecoin": "WATCH",
   "bitcoin": "WATCH",
   "cardano": "WATCH",
   "chainlink": "HOLD",
   "dogecoin": "WATCH",
-  "ethereum": "HOLD",
+  "ethereum": "WATCH",
   "ripple": "HOLD",
   "solana": "WATCH",
   "tron": "HOLD"
@@ -18,7 +18,7 @@
  "moves": {
   "avalanche-2": 1795204782.586689,
   "binancecoin": 1795204782.586689,
-  "cardano": 1795204782.586689,
+  "cardano": 1795705188.734562,
   "chainlink": 1795204782.586689,
   "dogecoin": 1795204782.586689,
   "ethereum": 1795204782.586689,
